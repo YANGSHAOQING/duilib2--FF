@@ -57,6 +57,10 @@ class ScopedGLContext {
   const bool swap_buffers_;
 };
 
+LPCWSTR kPreWndProc = L"CefPreWndProc";
+LPCWSTR kDraggableRegion = L"CefDraggableRegion";
+LPCWSTR kTopLevelHwnd = L"CefTopLevelHwnd";
+
 }  // namespace
 
 namespace DuiLib {
@@ -100,17 +104,23 @@ class CCefUI::CCefUIImpl : public Internal::ClientHandlerOsr::OsrDelegate {
       , m_bUsingOpenGL(false)
       , m_bPaintingPopup_(false)
       , m_bClosing(false)
+      , m_draggableRegion(NULL)
       , m_dwCefBkColor(0xffffffff) {
     m_hViewMemoryDC = CreateCompatibleDC(NULL);
     m_hPopupMemoryDC = CreateCompatibleDC(NULL);
 
     srand(time(NULL));
     m_iRandomID = rand();
+
+    m_draggableRegion = ::CreateRectRgn(0, 0, 0, 0);
   }
 
   ~CCefUIImpl() {
     assert(m_hGLRC == nullptr);
     assert(m_browser == nullptr);
+
+    ::DeleteObject(m_draggableRegion);
+    m_draggableRegion = NULL;
 
     if (m_pDevToolsWnd) {
       TCHAR szName[MAX_PATH];
@@ -785,6 +795,107 @@ class CCefUI::CCefUIImpl : public Internal::ClientHandlerOsr::OsrDelegate {
     //if (frame->IsMain()) {
 
     //}
+  }
+
+
+  static LRESULT CALLBACK SubclassedWindowProc(HWND hWnd,
+                                                        UINT message,
+                                                        WPARAM wParam,
+                                                        LPARAM lParam) {
+    WNDPROC hPreWndProc = reinterpret_cast<WNDPROC>(::GetPropW(hWnd, kPreWndProc));
+    HRGN hRegion = reinterpret_cast<HRGN>(::GetPropW(hWnd, kDraggableRegion));
+    HWND hTopLevelWnd = reinterpret_cast<HWND>(::GetPropW(hWnd, kTopLevelHwnd));
+
+    if (message == WM_LBUTTONDOWN) {
+      POINT point = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+      if (::PtInRegion(hRegion, point.x, point.y)) {
+        ::ClientToScreen(hWnd, &point);
+        ::PostMessage(hTopLevelWnd, WM_NCLBUTTONDOWN, HTCAPTION, MAKELPARAM(point.x, point.y));
+        return 0;
+      }
+    }
+
+    ASSERT(hPreWndProc);
+    return CallWindowProc(hPreWndProc, hWnd, message, wParam, lParam);
+  }
+
+  static BOOL CALLBACK SubclassWindowsProc(HWND hwnd, LPARAM lParam) {
+    CCefUIImpl* pImpl = (CCefUIImpl*)lParam;
+    subclassWindow(hwnd, reinterpret_cast<HRGN>(pImpl->m_draggableRegion),
+                   (HWND)pImpl->m_pParent->m_pManager->GetPaintWindow());
+    return TRUE;
+  }
+
+  static BOOL CALLBACK UnSubclassWindowsProc(HWND hwnd, LPARAM lParam) {
+    unSubclassWindow(hwnd);
+    return TRUE;
+  }
+
+  static void subclassWindow(HWND hWnd, HRGN hRegion, HWND hTopLevelWnd) {
+    HANDLE hParentWndProc = ::GetPropW(hWnd, kPreWndProc);
+    if (hParentWndProc) {
+      ::SetPropW(hWnd, kDraggableRegion, reinterpret_cast<HANDLE>(hRegion));
+      return;
+    }
+
+    SetLastError(0);
+    LONG_PTR hOldWndProc =
+        SetWindowLongPtr(hWnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(SubclassedWindowProc));
+    if (hOldWndProc == NULL && GetLastError() != ERROR_SUCCESS) {
+      return;
+    }
+
+    ::SetPropW(hWnd, kPreWndProc, reinterpret_cast<HANDLE>(hOldWndProc));
+    ::SetPropW(hWnd, kDraggableRegion, reinterpret_cast<HANDLE>(hRegion));
+    ::SetPropW(hWnd, kTopLevelHwnd, reinterpret_cast<HANDLE>(hTopLevelWnd));
+  }
+
+  static void unSubclassWindow(HWND hWnd) {
+    LONG_PTR hPreWndProc = reinterpret_cast<LONG_PTR>(::GetPropW(hWnd, kPreWndProc));
+    if (hPreWndProc) {
+      LONG_PTR hPreviousWndProc = SetWindowLongPtr(hWnd, GWLP_WNDPROC, hPreWndProc);
+      ALLOW_UNUSED_LOCAL(hPreviousWndProc);
+      DCHECK_EQ(hPreviousWndProc, reinterpret_cast<LONG_PTR>(SubclassedWindowProc));
+    }
+
+    ::RemovePropW(hWnd, kPreWndProc);
+    ::RemovePropW(hWnd, kDraggableRegion);
+    ::RemovePropW(hWnd, kTopLevelHwnd);
+  }
+
+  void OnDraggableRegionsChanged(CefRefPtr<CefBrowser> browser,
+                                 const std::vector<CefDraggableRegion>& regions) {
+    ::SetRectRgn(m_draggableRegion, 0, 0, 0, 0);
+
+    float dpiScale = m_pParent->m_pManager->GetDPIObj()->GetScale() / 100.f;
+
+    std::vector<CefDraggableRegion>::const_iterator it = regions.begin();
+    for (; it != regions.end(); ++it) {
+      cef_rect_t rc = it->bounds;
+      rc.x = (float)rc.x * dpiScale;
+      rc.y = (float)rc.y * dpiScale;
+      rc.width = (float)rc.width * dpiScale;
+      rc.height = (float)rc.height * dpiScale;
+      HRGN region = ::CreateRectRgn(rc.x, rc.y, rc.x + rc.width, rc.y + rc.height);
+      ::CombineRgn(m_draggableRegion, m_draggableRegion, region, it->draggable ? RGN_OR : RGN_DIFF);
+      ::DeleteObject(region);
+    }
+
+    ASSERT(browser && browser->GetHost());
+    if (browser && browser->GetHost()) {
+      HWND hwnd = browser->GetHost()->GetWindowHandle();
+      ASSERT(hwnd);
+      if (hwnd) {
+        if (m_bUsingOSR) {
+          subclassWindow(hwnd, reinterpret_cast<HRGN>(m_draggableRegion),
+                         (HWND)m_pParent->m_pManager->GetPaintWindow());
+        }
+        else {
+          WNDENUMPROC proc = !regions.empty() ? SubclassWindowsProc : UnSubclassWindowsProc;
+          ::EnumChildWindows(hwnd, proc, reinterpret_cast<LPARAM>(this));
+        }
+      }
+    }
   }
 
   void OnSetDraggableRegions(const std::vector<CefDraggableRegion>& regions) OVERRIDE {}
@@ -1560,6 +1671,8 @@ class CCefUI::CCefUIImpl : public Internal::ClientHandlerOsr::OsrDelegate {
   bool m_bPaintingPopup_;
 
   bool m_bClosing;
+
+  HRGN m_draggableRegion;
 };
 
 IMPLEMENT_DUICONTROL(CCefUI)

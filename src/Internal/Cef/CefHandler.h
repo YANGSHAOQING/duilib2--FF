@@ -134,6 +134,11 @@ namespace DuiLib {
                 virtual void OnResourceResponse(const std::string url, int rsp_status) {}
 
                 virtual void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser, TerminationStatus status) {};
+
+                virtual void OnDraggableRegionsChanged(
+                  CefRefPtr<CefBrowser> browser,
+                  const std::vector<CefDraggableRegion>& regions) {
+                }
               protected:
                 virtual ~OsrDelegate() {}
             };
@@ -257,6 +262,9 @@ namespace DuiLib {
 
             void OnCursorChange(CefRefPtr<CefBrowser> browser, CefCursorHandle cursor, CursorType type, const CefCursorInfo &custom_cursor_info) OVERRIDE;
 
+            // CefDragHandler
+            void OnDraggableRegionsChanged(CefRefPtr<CefBrowser> browser,
+              const std::vector<CefDraggableRegion>& regions) OVERRIDE;
           private:
             OsrDelegate *delegate_;
 

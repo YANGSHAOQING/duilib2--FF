@@ -33,3 +33,6 @@
 
 packages
 .vs
+build/
+cef_binary.tar.gz
+cef_binary-*/
