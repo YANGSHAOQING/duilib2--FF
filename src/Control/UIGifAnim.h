@@ -21,8 +21,13 @@ namespace DuiLib {
 
         void	SetAutoPlay(bool bIsAuto = true );
         bool	IsAutoPlay() const;
+
         void	SetAutoSize(bool bIsAuto = true );
         bool	IsAutoSize() const;
+
+        void  SetAdaptDpiScale(bool b = true);
+        bool  IsAdaptDpiScale() const;
+
         void	PlayGif();
         void	PauseGif();
         void	StopGif();
@@ -41,6 +46,7 @@ namespace DuiLib {
         bool			m_bIsAutoPlay;				// 是否自动播放gif
         bool			m_bIsAutoSize;				// 是否自动根据图片设置大小
         bool			m_bIsPlaying;
+        bool      m_bAdaptDpiScale;
         class Impl;
         Impl *m_pImpl;
     };
