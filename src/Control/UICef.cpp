@@ -101,6 +101,7 @@ class CCefUI::CCefUIImpl : public Internal::ClientHandlerOsr::OsrDelegate {
       , m_hGLRC(nullptr)
       , m_hOsrWnd(nullptr)
       , m_bUsingOSR(true)
+      , m_bDragEnable(false)
       , m_bUsingOpenGL(false)
       , m_bPaintingPopup_(false)
       , m_bClosing(false)
@@ -347,6 +348,10 @@ class CCefUI::CCefUIImpl : public Internal::ClientHandlerOsr::OsrDelegate {
 
   void SetUsingOSR(bool b) {
     m_bUsingOSR = b;
+  }
+
+  void SetDragEnable(bool b) {
+    m_bDragEnable = b;
   }
 
   bool IsUsingOSR() const {
@@ -865,6 +870,8 @@ class CCefUI::CCefUIImpl : public Internal::ClientHandlerOsr::OsrDelegate {
 
   void OnDraggableRegionsChanged(CefRefPtr<CefBrowser> browser,
                                  const std::vector<CefDraggableRegion>& regions) {
+    if (!m_bDragEnable)
+      return;
     ::SetRectRgn(m_draggableRegion, 0, 0, 0, 0);
 
     float dpiScale = m_pParent->m_pManager->GetDPIObj()->GetScale() / 100.f;
@@ -1664,6 +1671,7 @@ class CCefUI::CCefUIImpl : public Internal::ClientHandlerOsr::OsrDelegate {
   bool m_bUsingOSR;
   bool m_bUsingOpenGL;
   bool m_bOpenGLInit;
+  bool m_bDragEnable;
   unsigned int m_iTextureId;
   HDC m_hDC;
   HGLRC m_hGLRC;
@@ -1713,6 +1721,8 @@ void CCefUI::SetAttribute(LPCTSTR pstrName, LPCTSTR pstrValue) {
     m_pImpl->SetUsingOpenGL(_tcsicmp(pstrValue, _T("true")) == 0);
   else if (_tcsicmp(pstrName, _T("osr")) == 0)
     m_pImpl->SetUsingOSR(_tcsicmp(pstrValue, _T("true")) == 0);
+  else if (_tcsicmp(pstrName, _T("drag")) == 0)
+    m_pImpl->SetDragEnable(_tcsicmp(pstrValue, _T("true")) == 0);
   else if (_tcsicmp(pstrName, _T("fps")) == 0)
     m_pImpl->SetFPS(_ttoi(pstrValue));
   else if (_tcsicmp(pstrName, _T("cefbkcolor")) == 0) {
