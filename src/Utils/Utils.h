@@ -7,6 +7,7 @@
 #include <vector>
 #include <map>
 #include <mutex>
+#include <functional>
 #include "UIlibExport.h"
 
 namespace DuiLib {
